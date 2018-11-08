@@ -77,13 +77,21 @@ func Commit() {
 	title := fmt.Sprintf("%s %s", emojiMap[answers.Gitmoji], answers.Title)
 	body := fmt.Sprintf("%s%s", answers.Message, issue)
 
+	commit := []string{"commit"}
+
 	signed := ""
 	if answers.Signed {
 		signed = "-S"
+		commit = append(commit, signed)
 	}
 
-	commit := []string{"commit", signed, fmt.Sprintf("-m \"%s\"", title), fmt.Sprintf("-m \"%s\"", body)}
-	fmt.Sprintf("commit %s -m \"%s\" -m \"%s\"", signed, title, body)
+	commit = append(commit, fmt.Sprintf("-m \"%s\"", title))
+
+	if len(body) > 0 {
+		commit = append(commit, fmt.Sprintf("-m \"%s\"", body))
+	}
+
+	fmt.Sprintf("git commit %s -m \"%s\" -m \"%s\"", signed, title, body)
 
 	Run(commit)
 }
@@ -114,11 +122,11 @@ func Run(commit []string) {
 
 	err = cmd.Wait()
 	if err != nil {
-		log.Fatalf("cmd.Run() failed with %s\n", err)
+		log.Fatalf(err)
 	}
-	if errStdout != nil || errStderr != nil {
-		log.Fatal("failed to capture stdout or stderr\n")
-	}
-	outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
-	fmt.Printf("\nout:\n%s\nerr:\n%s\n", outStr, errStr)
+	/*	if errStdout != nil || errStderr != nil {
+			log.Fatal("failed to capture stdout or stderr\n")
+		}
+		outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
+		fmt.Printf("\nout:\n%s\nerr:\n%s\n", outStr, errStr)*/
 }
