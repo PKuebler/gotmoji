@@ -1,66 +1,76 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
-	. "github.com/logrusorgru/aurora"
+
+	"github.com/spf13/cobra"
 	"gopkg.in/AlecAivazis/survey.v1"
-	"io"
-	"log"
-	"os"
-	"os/exec"
+
+	"github.com/pkuebler/gotmoji/gitmoji"
+	"github.com/pkuebler/gotmoji/models"
 )
 
-func Commit() {
-	config := LoadConfig()
+var useUTF8 bool
 
-	gitmoji := []string{}
-	emojiMap := map[string]string{}
+func init() {
+	rootCmd.PersistentFlags().BoolVarP(&useUTF8, "utf8", "u", false, "utf8 emoji (default :code:)")
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "commit",
+		Short: "commit",
+		Long:  `commit`,
+		Run:   commitCmd,
+	})
+}
 
-	for _, emoji := range config.Gitmojis {
-		option := fmt.Sprintf("%s - %s (%s)", emoji.Emoji, emoji.Description, Magenta(emoji.Code))
-		gitmoji = append(gitmoji, option)
-		emojiMap[option] = emoji.Code
+func commitCmd(cmd *cobra.Command, args []string) {
+	directory := gitmoji.FetchEmojis()
+
+	if directory == nil {
+		fmt.Println("Can't fetch the emoji directory.")
+		return
 	}
 
-	// the questions to ask
-	var qs = []*survey.Question{
+	gitmojiOptions := directory.SelectOptions()
+
+	qs := []*survey.Question{
 		{
 			Name: "gitmoji",
 			Prompt: &survey.Select{
 				Message: "Choose a gitmoji",
-				Options: gitmoji,
-				Default: gitmoji[0],
+				Options: gitmojiOptions,
+				FilterFn: func(filter string, options []string) (filtered []string) {
+					result := survey.DefaultFilterFn(filter, options)
+					for _, v := range result {
+						if len(v) >= 5 {
+							filtered = append(filtered, v)
+						}
+					}
+					return
+				},
 			},
-			Validate: survey.Required,
 		},
 		{
-			Name:     "title",
-			Prompt:   &survey.Input{Message: "Enter the commit title"},
-			Validate: survey.Required,
+			Name: "title",
+			Prompt: &survey.Input{
+				Message: "Enter the commit title",
+			},
 		},
 		{
-			Name:   "message",
-			Prompt: &survey.Input{Message: "Enter the commit message"},
+			Name: "message",
+			Prompt: &survey.Multiline{
+				Message: "Enter the commit message",
+			},
 		},
 		{
-			Name:   "issue",
-			Prompt: &survey.Input{Message: "Issue / PR reference #"},
-		},
-		{
-			Name:   "signed",
-			Prompt: &survey.Confirm{Message: "Signed commit"},
+			Name: "issue",
+			Prompt: &survey.Input{
+				Message: "Issue / PR reference",
+			},
 		},
 	}
 
 	// the answers will be written to this struct
-	answers := struct {
-		Gitmoji string
-		Title   string
-		Message string
-		Issue   string
-		Signed  bool
-	}{}
+	answers := models.Commit{}
 
 	// perform the questions
 	err := survey.Ask(qs, &answers)
@@ -69,64 +79,7 @@ func Commit() {
 		return
 	}
 
-	issue := ""
-	if len(answers.Issue) > 0 {
-		issue = fmt.Sprintf(" (%s)", answers.Issue)
-	}
+	answers.Gitmoji = directory.SelectedOption(answers.Selected)
 
-	title := fmt.Sprintf("%s %s", emojiMap[answers.Gitmoji], answers.Title)
-	body := fmt.Sprintf("%s%s", answers.Message, issue)
-
-	commit := []string{"commit"}
-
-	signed := ""
-	if answers.Signed {
-		signed = "-S"
-		commit = append(commit, signed)
-	}
-
-	commit = append(commit, fmt.Sprintf("-m \"%s\"", title))
-
-	if len(body) > 0 {
-		commit = append(commit, fmt.Sprintf("-m \"%s\"", body))
-	}
-
-	fmt.Sprintf("git commit %s -m \"%s\" -m \"%s\"", signed, title, body)
-
-	Run(commit)
-}
-
-func Run(commit []string) {
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	cmd := exec.Command("git", commit...)
-
-	stdoutIn, _ := cmd.StdoutPipe()
-	stderrIn, _ := cmd.StderrPipe()
-
-	var errStdout, errStderr error
-	stdout := io.MultiWriter(os.Stdout, &stdoutBuf)
-	stderr := io.MultiWriter(os.Stderr, &stderrBuf)
-	err := cmd.Start()
-	if err != nil {
-		log.Fatalf("cmd.Start() failed with '%s'\n", err)
-	}
-
-	go func() {
-		_, errStdout = io.Copy(stdout, stdoutIn)
-	}()
-
-	go func() {
-		_, errStderr = io.Copy(stderr, stderrIn)
-	}()
-
-	err = cmd.Wait()
-	if err != nil {
-		log.Fatalf(err)
-	}
-	/*	if errStdout != nil || errStderr != nil {
-			log.Fatal("failed to capture stdout or stderr\n")
-		}
-		outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
-		fmt.Printf("\nout:\n%s\nerr:\n%s\n", outStr, errStr)*/
+	gitmoji.Commit(answers, useUTF8)
 }
